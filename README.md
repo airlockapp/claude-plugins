@@ -50,6 +50,35 @@ See [plugins/claude-code-enforcer/INSTALL.md](plugins/claude-code-enforcer/INSTA
 
 ---
 
+## Uninstall
+
+To fully remove the Airlock enforcer:
+
+1. **Unpair and sign out** (from Claude Code or terminal):
+   ```
+   /airlock:unpair
+   /airlock:sign-out
+   ```
+
+2. **Remove the plugin** (if installed from the marketplace):
+   ```bash
+   claude plugin uninstall airlock@airlock-claude-plugins
+   ```
+
+3. **Remove config directory**:
+   ```bash
+   rm -rf ~/.config/airlock-enforcer
+   ```
+   On Windows: `Remove-Item -Recurse -Force "$env:USERPROFILE\.config\airlock-enforcer"`
+
+4. **Remove OS keychain entries** (if you used secure storage): delete entries named **"Airlock Enforcer"** from Credential Manager (Windows), Keychain Access (macOS), or your keyring manager (Linux).
+
+5. **Remove `.airlock` dotfiles** from any paired workspace directories (optional).
+
+See [plugins/claude-code-enforcer/INSTALL.md](plugins/claude-code-enforcer/INSTALL.md) for detailed uninstall steps.
+
+---
+
 ## HARP (Human Authorization & Review Protocol)
 
 Airlock implements **[HARP](https://harp-protocol.github.io/)** — the Human Authorization & Review Protocol — a standards-grade, cryptographically verifiable authorization layer for AI agents.

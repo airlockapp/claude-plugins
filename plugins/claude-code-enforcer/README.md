@@ -20,7 +20,7 @@ Uses the [Claude Code plugin](https://code.claude.com/docs/en/plugins-reference)
 - **Auto-approve patterns**: Define patterns (substring or `/regex/`) for shell commands that should be auto-approved without gateway approval. Only Bash commands are matched — tool calls (Edit, Write, MCP) always go through the gateway. Same matching as the Cursor enforcer.
 - **Do Not Disturb (DND)**: If the gateway has DND policies configured, the daemon evaluates them before submitting artifacts — auto-approving or auto-denying actions based on the policy.
 - **Gateway communication**: Daemon builds HARP envelopes, encrypts with the pairing key, submits to `POST /v1/artifacts`, long-polls `GET /v1/exchanges/{id}/wait`, and returns the decision.
-- **Refresh token**: Daemon refreshes the access token automatically (and on 401).
+- **Refresh token**: Daemon proactively refreshes the access token before expiry (60s ahead) with exponential backoff (30s–300s, up to 10 retries), and refreshes on 401.
 - **Fail-open / fail-close**: If the daemon is unreachable (not running, connection timeout), the bootstrap applies **fail mode** (configurable via **/airlock:fail-mode**):
   - `failClosed` (default): block the action.
   - `failOpen`: allow the action.
@@ -28,7 +28,7 @@ Uses the [Claude Code plugin](https://code.claude.com/docs/en/plugins-reference)
 
 Approval **timeout** (no response from gateway within 2 minutes) always **denies** (no fail-open on timeout).
 
-**Network:** The plugin and daemon communicate **only with the Airlock gateway** (sign-in, pairing, artifacts, exchanges, presence WebSocket). The bootstrap script does not make HTTP requests; it only talks to the local daemon via a named pipe. The endpoint resolver probes localhost only to discover a local gateway; the default is the release gateway. No direct Keycloak or other external URLs.
+**Network:** The plugin and daemon communicate **only with the Airlock gateway** (sign-in, pairing, artifacts, exchanges, presence WebSocket). The bootstrap script does not make HTTP requests; it only talks to the local daemon via a named pipe. No localhost probing is performed — the default is the production gateway (`gw.airlocks.io`). Dev mode uses an explicit URL set via the dev-mode command. No direct Keycloak or other external URLs.
 
 ## Installation
 
@@ -111,8 +111,10 @@ cd /path/to/your/project
 
 ### Gateway URL and dev/prod mode
 
-- **Prod mode** (default): Gateway resolves in this order — saved URL in credentials → `AIRLOCK_GATEWAY_URL` → local probe → default `https://gw.airlocks.io`. Strict TLS.
+- **Prod mode** (default): Gateway resolves in this order — saved URL in credentials → `AIRLOCK_GATEWAY_URL` → default `https://gw.airlocks.io`. Strict TLS.
 - **Dev mode**: Gateway is `https://localhost:7145` (or a URL you set with **/airlock:dev-mode** [URL]). Self-signed certificates are allowed (`NODE_TLS_REJECT_UNAUTHORIZED=0`).
+
+Switching modes (dev-mode / prod-mode) automatically stops the running daemon so it restarts with the new gateway on the next action.
 
 Use **/airlock:dev-mode** before sign-in when using a local gateway. Use **/airlock:prod-mode** to switch back. **/airlock:status** shows the current mode and gateway URL.
 

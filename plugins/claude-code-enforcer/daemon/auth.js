@@ -1,9 +1,15 @@
 "use strict";
 
 /**
- * Auth: device flow, token refresh.
+ * Auth: device flow, token refresh, proactive refresh timer.
  * All HTTP requests go only to the Airlock gateway (gatewayUrl). No direct Keycloak or other URLs.
  * Sign-in opens the verification URL in the default browser (same UX as Cursor enforcer).
+ *
+ * Refresh strategy (aligned with Cursor enforcer deviceAuth.ts):
+ * - Proactive timer refreshes JWT 60s before expiry
+ * - Exponential backoff on failure: 30s, 60s, 120s, 240s, max 300s
+ * - Up to MAX_REFRESH_RETRIES before declaring session expired
+ * - Credentials are NOT cleared on transient failure (may recover)
  */
 const http = require("http");
 const https = require("https");
@@ -15,6 +21,15 @@ const {
 } = require("./config.js");
 
 const MAX_REFRESH_RETRIES = 10;
+
+/** Module-level logger — set by callers via setLogger(). Defaults to stderr. */
+let _log = (msg) => {
+  try { process.stderr.write(`[Airlock Auth] ${msg}\n`); } catch (_) {}
+};
+
+function setLogger(fn) {
+  if (typeof fn === "function") _log = fn;
+}
 
 function ensureGatewayPath(path) {
   const s = String(path || "").trim();
@@ -128,16 +143,24 @@ async function pollDeviceToken(gatewayUrl, deviceCode) {
 
 /**
  * Refresh access token using stored refresh token.
+ * Logs diagnostic info on failure (aligned with Cursor enforcer pattern).
+ * Does NOT clear credentials on failure — transient errors should not kill the session.
  */
 async function refresh() {
   const creds = readCredentials();
-  if (!creds || !creds.refreshToken || !creds.gatewayUrl) return false;
+  if (!creds || !creds.refreshToken || !creds.gatewayUrl) {
+    _log("Refresh skipped: no refresh token or gateway URL stored");
+    return false;
+  }
 
   try {
     const resp = await postJson(creds.gatewayUrl, "/v1/auth/enforcer/refresh", {
       refreshToken: creds.refreshToken,
     });
-    if (!resp || !resp.accessToken) return false;
+    if (!resp || !resp.accessToken) {
+      _log("Refresh failed: gateway returned no access token");
+      return false;
+    }
 
     await writeCredentialsAsync({
       ...creds,
@@ -145,13 +168,16 @@ async function refresh() {
       refreshToken: resp.refreshToken || creds.refreshToken,
     });
     return true;
-  } catch {
+  } catch (e) {
+    _log(`Refresh failed: ${e.message || e}`);
+    // Don't clear credentials — failure may be transient (gateway down, network issue)
     return false;
   }
 }
 
 /**
  * Return a fresh access token, refreshing if expiry is within 60s.
+ * Retries up to 2 times with 1s delay for on-demand callers (e.g. status command).
  */
 async function ensureFreshToken() {
   const creds = readCredentials();
@@ -164,17 +190,35 @@ async function ensureFreshToken() {
     const expiresAt = (payload.exp || 0) * 1000;
     const refreshAt = expiresAt - 60_000;
     if (Date.now() >= refreshAt) {
-      const ok = await refresh();
-      if (!ok) return null;
-      const updated = readCredentials();
-      return updated ? updated.accessToken : null;
+      // Retry refresh up to 2 extra times with short delay
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const ok = await refresh();
+        if (ok) {
+          const updated = readCredentials();
+          return updated ? updated.accessToken : null;
+        }
+        if (attempt < 2) {
+          _log(`Refresh attempt ${attempt + 1} failed, retrying in 1s...`);
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+      _log("All refresh attempts failed — token may be expired");
+      return null;
     }
     return creds.accessToken;
   } catch {
-    const ok = await refresh();
-    if (!ok) return null;
-    const updated = readCredentials();
-    return updated ? updated.accessToken : null;
+    // Malformed JWT — try refresh with retry
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const ok = await refresh();
+      if (ok) {
+        const updated = readCredentials();
+        return updated ? updated.accessToken : null;
+      }
+      if (attempt < 2) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+    return null;
   }
 }
 
@@ -254,6 +298,69 @@ async function login(gatewayUrl, log) {
   throw new Error("Login timed out. Please try again.");
 }
 
+/**
+ * Proactive refresh timer — schedules JWT refresh 60s before expiry.
+ * Uses exponential backoff on failure (30s, 60s, 120s, 240s, max 300s)
+ * up to MAX_REFRESH_RETRIES. Aligned with Cursor enforcer's startRefreshTimer().
+ *
+ * @param { (msg: string) => void } [log] - Logger function
+ * @returns {{ dispose: () => void }} - Call dispose() to stop the timer
+ */
+function startRefreshTimer(log) {
+  const logger = log || _log;
+  let timer = null;
+  let retryCount = 0;
+  let disposed = false;
+
+  const scheduleNext = () => {
+    if (disposed) return;
+    const creds = readCredentials();
+    if (!creds || !creds.accessToken) return;
+
+    try {
+      const payload = JSON.parse(
+        Buffer.from(creds.accessToken.split(".")[1], "base64url").toString("utf8")
+      );
+      const expiresAt = (payload.exp || 0) * 1000;
+      const refreshAt = expiresAt - 60_000; // 60s before expiry
+      const delay = Math.max(0, refreshAt - Date.now());
+
+      timer = setTimeout(async () => {
+        if (disposed) return;
+        const ok = await refresh();
+        if (ok) {
+          retryCount = 0;
+          logger("Token refreshed proactively.");
+          scheduleNext(); // Schedule next refresh
+        } else {
+          retryCount++;
+          if (retryCount >= MAX_REFRESH_RETRIES) {
+            logger(`Session expired: ${MAX_REFRESH_RETRIES} refresh retries exhausted. Run 'sign-in' again.`);
+            return; // Stop retrying
+          }
+          // Exponential backoff: 30s, 60s, 120s, 240s, max 300s
+          const retryDelay = Math.min(30_000 * Math.pow(2, retryCount - 1), 300_000);
+          logger(`Refresh retry ${retryCount}/${MAX_REFRESH_RETRIES} in ${Math.round(retryDelay / 1000)}s...`);
+          timer = setTimeout(() => {
+            if (!disposed) scheduleNext();
+          }, retryDelay);
+        }
+      }, delay);
+    } catch {
+      // Malformed JWT — nothing to schedule
+      logger("Cannot schedule refresh: malformed JWT");
+    }
+  };
+
+  scheduleNext();
+  return {
+    dispose: () => {
+      disposed = true;
+      if (timer) clearTimeout(timer);
+    },
+  };
+}
+
 module.exports = {
   postJson,
   getJson,
@@ -263,4 +370,6 @@ module.exports = {
   ensureFreshToken,
   login,
   readCredentials,
+  setLogger,
+  startRefreshTimer,
 };

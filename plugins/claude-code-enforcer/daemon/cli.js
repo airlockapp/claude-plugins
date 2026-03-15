@@ -228,10 +228,16 @@ async function cmdStatus() {
   if (mode === "dev") {
     console.log("TLS: self-signed certificates allowed");
   }
-  if (!creds) {
+  // Check actual token freshness, not just credential existence
+  if (!creds || !creds.accessToken) {
     console.log("Signed in: no — Run sign-in or login");
   } else {
-    console.log("Signed in: yes");
+    const freshToken = await auth.ensureFreshToken();
+    if (freshToken) {
+      console.log("Signed in: yes (token valid)");
+    } else {
+      console.log("Signed in: expired — Run sign-in to re-authenticate");
+    }
   }
   console.log("Workspace:", wsPath);
   console.log("Paired:", config.getRoutingToken(wsHash) ? "yes" : "no");
@@ -251,6 +257,12 @@ async function cmdDevMode(customUrl) {
   await config.setModeAsync("dev", url);
   log("Dev mode ON. Gateway: " + url);
   log("Self-signed certificates are allowed (NODE_TLS_REJECT_UNAUTHORIZED=0).");
+
+  // Stop running daemon so it restarts with the new gateway
+  const { wsHash } = resolveWorkspace();
+  await stopDaemon(wsHash, log);
+  log("Daemon will restart with new gateway on next action.");
+
   console.log("Mode: dev");
   console.log("Gateway:", url);
   console.log("TLS: self-signed certificates allowed");
@@ -259,6 +271,12 @@ async function cmdDevMode(customUrl) {
 async function cmdProdMode() {
   await config.setModeAsync("prod");
   log("Prod mode ON. Gateway will resolve to https://gw.airlocks.io (or env/saved).");
+
+  // Stop running daemon so it restarts with the prod gateway
+  const { wsHash } = resolveWorkspace();
+  await stopDaemon(wsHash, log);
+  log("Daemon will restart with new gateway on next action.");
+
   console.log("Mode: prod");
   console.log("Gateway: https://gw.airlocks.io (default)");
 }
@@ -359,6 +377,15 @@ async function cmdRun() {
   // Retrofit legacy pairings (or heal missing files) by ensuring the dotfile/gitignore exists
   ensureAirlockDotfile(wsPath, wsHash);
 
+  // Start proactive refresh timer (aligned with Cursor enforcer)
+  let refreshTimer = null;
+  try {
+    refreshTimer = auth.startRefreshTimer(log);
+    log("Proactive token refresh timer started.");
+  } catch (e) {
+    log(`Refresh timer not started: ${e.message || e}`);
+  }
+
   // Start presence WebSocket
   let presenceClient = null;
   try {
@@ -373,6 +400,7 @@ async function cmdRun() {
 
   // Clean shutdown callback
   const onShutdown = () => {
+    if (refreshTimer) refreshTimer.dispose();
     if (presenceClient) presenceClient.dispose();
   };
 
@@ -431,6 +459,7 @@ AIRLOCK_WORKSPACE). Then use Claude Code with the Airlock plugin in that workspa
 async function main() {
   await config.loadCacheAsync();
   config.applyTlsFromMode();
+  auth.setLogger(log);
   if (config.isUsingSecureStorage && config.isUsingSecureStorage()) {
     log("Using OS keychain for credentials and keys.");
   }

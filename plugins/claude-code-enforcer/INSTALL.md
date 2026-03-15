@@ -72,7 +72,7 @@ If you use a **local gateway** (e.g. `https://localhost:7145`) with **self-signe
 - **From Claude Code:** Run **/airlock:dev-mode** (or **/airlock:dev-mode https://localhost:7145** to set a custom URL).
 - **From terminal:** `~/.config/airlock-enforcer/bin/airlock-enforcer dev-mode` or `~/.config/airlock-enforcer/bin/airlock-enforcer dev-mode https://localhost:YOUR_PORT`.
 
-Dev mode sets the gateway URL to `https://localhost:7145` (or your URL) and allows self-signed certs. Use **/airlock:prod-mode** to switch back to production (`https://gw.airlocks.io`).
+Dev mode sets the gateway URL to `https://localhost:7145` (or your URL) and allows self-signed certs. Switching modes automatically stops the running daemon so it restarts with the new gateway. Use **/airlock:prod-mode** to switch back to production (`https://gw.airlocks.io`).
 
 ---
 
@@ -195,14 +195,64 @@ This shows **mode** (dev/prod), **gateway URL**, whether you're signed in, and w
 
 ## Uninstall
 
-1. Stop the daemon: run **/airlock:sign-out** (or the daemon will stop automatically when your Claude Code session ends).
-2. If you installed the plugin from the marketplace:  
-   `claude plugin uninstall airlock@airlock-claude-plugins`  
-   If you only used `--plugin-dir`, just stop using that flag (no uninstall step).
-3. Optional: remove config and credentials:  
-   `rm -rf ~/.config/airlock-enforcer`  
-   (On Windows: remove the `airlock-enforcer` folder under `%APPDATA%` or the path given in the daemon output.)  
-   If you used secure storage, also remove the "Airlock Enforcer" entries from your OS keychain (e.g. Keychain Access on macOS, Credential Manager on Windows).
+To completely remove the Airlock enforcer from your machine:
+
+### 1. Unpair and sign out
+
+From Claude Code:
+```
+/airlock:unpair
+/airlock:sign-out
+```
+
+Or from a terminal:
+```bash
+~/.config/airlock-enforcer/bin/airlock-enforcer unpair
+~/.config/airlock-enforcer/bin/airlock-enforcer sign-out
+```
+
+This revokes the pairing on the gateway, clears stored credentials, and stops the daemon.
+
+### 2. Remove the plugin
+
+**If installed from the marketplace:**
+```bash
+claude plugin uninstall airlock@airlock-claude-plugins
+```
+
+**If used with `--plugin-dir`:** Simply stop using the `--plugin-dir` flag. No uninstall step is needed.
+
+### 3. Remove config directory and native shim
+
+**Linux / macOS:**
+```bash
+rm -rf ~/.config/airlock-enforcer
+```
+
+**Windows (PowerShell):**
+```powershell
+Remove-Item -Recurse -Force "$env:USERPROFILE\.config\airlock-enforcer"
+```
+
+This removes stored credentials (if not using the OS keychain), workspace state, the native shim binary, and all enforcer configuration.
+
+### 4. Remove OS keychain entries (if you used secure storage)
+
+If you ran `npm install` in the plugin directory to enable secure storage, keychain entries were created under the service name **"Airlock Enforcer"**. Remove them:
+
+- **Windows:** Open **Credential Manager** → **Windows Credentials** → find and remove entries named `Airlock Enforcer`.
+- **macOS:** Open **Keychain Access** → search for `Airlock Enforcer` → delete the entries.
+- **Linux:** Use `secret-tool` or your desktop keyring manager to remove entries for `Airlock Enforcer`.
+
+### 5. Remove workspace dotfiles (optional)
+
+If you paired any workspace directories, a `.airlock` file was created in each (and added to `.gitignore`). You can safely delete these:
+
+```bash
+rm /path/to/your/project/.airlock
+```
+
+The `.gitignore` entry (`.airlock`) can be removed too, but it's harmless to leave it.
 
 ---
 
