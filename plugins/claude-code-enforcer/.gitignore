@@ -1,2 +1,5 @@
-node_modules/
-.airlock  
+# Only exclude native/optional deps — ws must ship for marketplace installs
+node_modules/keytar/
+node_modules/.bin/
+node_modules/.package-lock.json
+.airlock
