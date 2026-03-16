@@ -41,6 +41,8 @@ Approval **timeout** (no response from gateway within 2 minutes) always **denies
 /plugin install airlock@airlock-claude-plugins
 ```
 
+> **Note:** After installing or updating the plugin, **restart Claude Code** (close and reopen) so the daemon starts and presence goes online. A simple `/reload plugins` is not enough — the daemon is launched by the SessionStart hook, which only fires when Claude Code opens.
+
 **From a local path** (e.g. for development): run Claude Code with the plugin directory. The plugin is active for that session only.
 
 ```bash

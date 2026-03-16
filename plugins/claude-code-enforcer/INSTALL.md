@@ -34,6 +34,8 @@ The plugin is published to the Airlock Claude Code marketplace hosted on GitHub.
 
 The plugin is automatically available in every Claude Code session after installation.
 
+> **Important:** After installing or updating the plugin, **restart Claude Code** (close and reopen) so the daemon starts and presence goes online. A simple `/reload plugins` is not enough — the daemon is launched by the SessionStart hook, which only fires when Claude Code starts.
+
 ### Option B: Local directory (for development or one-off use)
 
 Run Claude Code with the plugin directory path using **`--plugin-dir`**:
@@ -178,8 +180,8 @@ This shows **mode** (dev/prod), **gateway URL**, whether you're signed in, and w
 - Make sure you are signed in and paired (**/airlock:status**).
 - The daemon should start automatically. If it didn't, restart Claude Code to trigger the SessionStart hook, or run `node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" run` manually from your project directory.
 
-**Workspace not showing in mobile app**  
-- Restart Claude Code so the daemon reconnects with presence. Check **/airlock:status** to confirm paired status.
+**Workspace not showing in mobile app / Presence offline after install**  
+- **Restart Claude Code** (close and reopen). The daemon starts on `SessionStart`, which only fires when Claude Code opens — not on `/reload plugins`. After restarting, your workspace should appear online in the mobile app. Check **/airlock:status** to confirm paired status.
 
 **Custom or local gateway**  
 - Run **/airlock:dev-mode** [URL] before sign-in, or set `AIRLOCK_GATEWAY_URL` to your gateway URL.
