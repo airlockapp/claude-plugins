@@ -279,7 +279,7 @@ function startPipeServer(workspacePath, log, onShutdown) {
     } catch {
       // fs error — don't crash, just skip this check
     }
-  }, 60_000);
+  }, 10_000);
   healthCheckTimer.unref();
 
   return new Promise((resolve, reject) => {
