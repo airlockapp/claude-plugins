@@ -6,8 +6,8 @@ Run this when the user invokes **/airlock:dev-mode** to use a local gateway with
 
 1. **Run**:
    ```bash
-   ~/.config/airlock-enforcer/bin/airlock-enforcer dev-mode
+   node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" dev-mode
    ```
-   With custom URL: `~/.config/airlock-enforcer/bin/airlock-enforcer dev-mode https://localhost:7145`
+   With custom URL: `node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" dev-mode https://localhost:7145`
 
 2. **Tell the user**: Dev mode is on. Use **/airlock:prod-mode** to switch back.

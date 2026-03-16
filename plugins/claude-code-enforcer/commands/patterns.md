@@ -6,7 +6,7 @@ List all auto-approve patterns for the current workspace.
 
 Run:
 ```bash
-~/.config/airlock-enforcer/bin/airlock-enforcer patterns
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" patterns
 ```
 
 Shows each pattern on a separate line, or "(none)" if no patterns configured.

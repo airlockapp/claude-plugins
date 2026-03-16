@@ -8,8 +8,8 @@ Run this when the user invokes **/airlock:fail-mode**. Controls what happens whe
 
 2. **Run**:
    ```bash
-   ~/.config/airlock-enforcer/bin/airlock-enforcer fail-mode open
-   ~/.config/airlock-enforcer/bin/airlock-enforcer fail-mode closed
+   node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" fail-mode open
+   node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" fail-mode closed
    ```
 
 3. **Tell the user**: **open** = allow when daemon unavailable (low-risk only), **closed** (default) = block. `AIRLOCK_FAIL_MODE` env var overrides.

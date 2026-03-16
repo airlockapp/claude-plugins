@@ -74,18 +74,18 @@ Claude will run the daemon scripts for you when you invoke these commands. Crede
 **Optional (terminal):** The plugin automatically generates a native shim executable the first time it loads. You can invoke it from any directory:
 
 ```bash
-~/.config/airlock-enforcer/bin/airlock-enforcer dev-mode [URL]   # default URL https://localhost:7145
-~/.config/airlock-enforcer/bin/airlock-enforcer prod-mode        # default https://gw.airlocks.io
-~/.config/airlock-enforcer/bin/airlock-enforcer login            # or sign-in; optional: add gateway URL as second arg
-~/.config/airlock-enforcer/bin/airlock-enforcer sign-out
-~/.config/airlock-enforcer/bin/airlock-enforcer pair
-~/.config/airlock-enforcer/bin/airlock-enforcer unpair
-~/.config/airlock-enforcer/bin/airlock-enforcer fail-mode open       # allow actions when daemon unavailable
-~/.config/airlock-enforcer/bin/airlock-enforcer fail-mode closed      # block actions when daemon unavailable (default)
-~/.config/airlock-enforcer/bin/airlock-enforcer approve 'git status'  # auto-approve commands matching pattern
-~/.config/airlock-enforcer/bin/airlock-enforcer disapprove 'git status' # remove auto-approve pattern
-~/.config/airlock-enforcer/bin/airlock-enforcer patterns              # list auto-approve patterns
-~/.config/airlock-enforcer/bin/airlock-enforcer status
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" dev-mode [URL]   # default URL https://localhost:7145
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" prod-mode        # default https://gw.airlocks.io
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" login            # or sign-in; optional: add gateway URL as second arg
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" sign-out
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" pair
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" unpair
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" fail-mode open       # allow actions when daemon unavailable
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" fail-mode closed      # block actions when daemon unavailable (default)
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" approve 'git status'  # auto-approve commands matching pattern
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" disapprove 'git status' # remove auto-approve pattern
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" patterns              # list auto-approve patterns
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" status
 ```
 
 ### 3. Daemon lifecycle (automatic)
@@ -106,7 +106,7 @@ No manual daemon management is needed. The daemon runs as a detached background 
 
 ```bash
 cd /path/to/your/project
-~/.config/airlock-enforcer/bin/airlock-enforcer run
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" run
 ```
 
 ### Gateway URL and dev/prod mode

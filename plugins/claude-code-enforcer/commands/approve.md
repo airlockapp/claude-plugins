@@ -6,7 +6,7 @@ Add an auto-approve pattern. Shell commands matching any pattern bypass gateway 
 
 Run:
 ```bash
-~/.config/airlock-enforcer/bin/airlock-enforcer approve "<pattern>"
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" approve "<pattern>"
 ```
 
 ## Pattern Formats

@@ -6,7 +6,7 @@ Disable Airlock enforcement. All tool use will be allowed without gateway approv
 
 Run:
 ```bash
-~/.config/airlock-enforcer/bin/airlock-enforcer auto-off
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" auto-off
 ```
 
 Use **/airlock:auto-on** to re-enable.

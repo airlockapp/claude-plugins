@@ -70,7 +70,7 @@ This installs the optional dependency used for secure storage. If this step is s
 If you use a **local gateway** (e.g. `https://localhost:7145`) with **self-signed certificates**, switch to dev mode first:
 
 - **From Claude Code:** Run **/airlock:dev-mode** (or **/airlock:dev-mode https://localhost:7145** to set a custom URL).
-- **From terminal:** `~/.config/airlock-enforcer/bin/airlock-enforcer dev-mode` or `~/.config/airlock-enforcer/bin/airlock-enforcer dev-mode https://localhost:YOUR_PORT`.
+- **From terminal:** `node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" dev-mode` or `node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" dev-mode https://localhost:YOUR_PORT`.
 
 Dev mode sets the gateway URL to `https://localhost:7145` (or your URL) and allows self-signed certs. Switching modes automatically stops the running daemon so it restarts with the new gateway. Use **/airlock:prod-mode** to switch back to production (`https://gw.airlocks.io`).
 
@@ -93,13 +93,13 @@ For production, you don't need to specify a gateway URL; the plugin will use the
 From any directory (once the native shim is installed on first plugin load):
 
 ```bash
-~/.config/airlock-enforcer/bin/airlock-enforcer login
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" login
 ```
 
 Or with an explicit gateway URL:
 
 ```bash
-~/.config/airlock-enforcer/bin/airlock-enforcer login https://your-gateway.example.com
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" login https://your-gateway.example.com
 ```
 
 The script opens the URL in your browser; sign in there.
@@ -121,7 +121,7 @@ After signing in, pair this machine with the Airlock mobile app so that approval
 From any directory:
 
 ```bash
-~/.config/airlock-enforcer/bin/airlock-enforcer pair
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" pair
 ```
 
 Enter the pairing code in the mobile app when prompted. The daemon starts automatically after pairing.
@@ -157,7 +157,7 @@ Config directory (for non-sensitive or fallback data): `~/.config/airlock-enforc
 - **From a terminal:** From the plugin root, run:
 
   ```bash
-  ~/.config/airlock-enforcer/bin/airlock-enforcer status
+  node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" status
   ```
 
 This shows **mode** (dev/prod), **gateway URL**, whether you're signed in, and whether you're paired. In dev mode it also shows that self-signed certificates are allowed.
@@ -176,7 +176,7 @@ This shows **mode** (dev/prod), **gateway URL**, whether you're signed in, and w
 
 **Tool use not gated / no approval prompt**  
 - Make sure you are signed in and paired (**/airlock:status**).
-- The daemon should start automatically. If it didn't, restart Claude Code to trigger the SessionStart hook, or run `~/.config/airlock-enforcer/bin/airlock-enforcer run` manually from your project directory.
+- The daemon should start automatically. If it didn't, restart Claude Code to trigger the SessionStart hook, or run `node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" run` manually from your project directory.
 
 **Workspace not showing in mobile app**  
 - Restart Claude Code so the daemon reconnects with presence. Check **/airlock:status** to confirm paired status.
@@ -207,8 +207,8 @@ From Claude Code:
 
 Or from a terminal:
 ```bash
-~/.config/airlock-enforcer/bin/airlock-enforcer unpair
-~/.config/airlock-enforcer/bin/airlock-enforcer sign-out
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" unpair
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" sign-out
 ```
 
 This revokes the pairing on the gateway, clears stored credentials, and stops the daemon.
@@ -260,8 +260,8 @@ The `.gitignore` entry (`.airlock`) can be removed too, but it's harmless to lea
 
 1. Load the plugin: run `/plugin marketplace add airlockapp/claude-plugins` then `/plugin install airlock@airlock-claude-plugins` (or use `claude --plugin-dir /path/to/claude-code-enforcer` for local development).
 2. (Recommended) Run `npm install` in the plugin directory for secure storage.
-3. Sign in: **/airlock:sign-in** or `~/.config/airlock-enforcer/bin/airlock-enforcer login`.
-4. Pair: **/airlock:pair** or `~/.config/airlock-enforcer/bin/airlock-enforcer pair`.
+3. Sign in: **/airlock:sign-in** or `node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" login`.
+4. Pair: **/airlock:pair** or `node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" pair`.
 5. Use Claude Code in your project — the daemon starts and stops automatically. Approve or deny actions in the mobile app.
 6. (Optional) Set fail mode: **/airlock:fail-mode open** or **/airlock:fail-mode closed**.
 7. (Optional) Auto-approve shell commands: **/airlock:approve** `<pattern>` to add, **/airlock:patterns** to list.

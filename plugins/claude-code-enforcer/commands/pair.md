@@ -8,7 +8,7 @@ When the user invokes **/airlock:pair**, run the pairing flow. The user must be 
 
 2. **Run**:
    ```bash
-   ~/.config/airlock-enforcer/bin/airlock-enforcer pair
+   node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" pair
    ```
 
 3. **Tell the user**: Enter the 6-character code in the Airlock mobile app.

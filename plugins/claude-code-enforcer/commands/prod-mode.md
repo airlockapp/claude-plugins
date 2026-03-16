@@ -6,7 +6,7 @@ Run this when the user invokes **/airlock:prod-mode** to switch to production mo
 
 1. **Run**:
    ```bash
-   ~/.config/airlock-enforcer/bin/airlock-enforcer prod-mode
+   node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" prod-mode
    ```
 
 2. **Tell the user**: Prod mode is on. Gateway is `https://gw.airlocks.io`. Use **/airlock:dev-mode** for local gateway.

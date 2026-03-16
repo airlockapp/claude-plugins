@@ -6,7 +6,7 @@ Remove an auto-approve pattern from the current workspace.
 
 Run:
 ```bash
-~/.config/airlock-enforcer/bin/airlock-enforcer disapprove "<pattern>"
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" disapprove "<pattern>"
 ```
 
 Pattern must match exactly what was used with **/airlock:approve**. Use **/airlock:patterns** to list.

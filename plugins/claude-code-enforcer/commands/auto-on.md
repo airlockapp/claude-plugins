@@ -6,5 +6,5 @@ Enable Airlock enforcement. All tool use will be gated through the gateway. This
 
 Run:
 ```bash
-~/.config/airlock-enforcer/bin/airlock-enforcer auto-on
+node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" auto-on
 ```

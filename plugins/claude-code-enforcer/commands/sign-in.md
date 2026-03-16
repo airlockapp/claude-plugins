@@ -6,12 +6,12 @@ Run this when the user invokes **/airlock:sign-in**, asks to sign in to Airlock,
 
 1. **Run the sign-in script** in the terminal. On macOS/Linux/Windows:
    ```bash
-   ~/.config/airlock-enforcer/bin/airlock-enforcer login
+   node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" login
    ```
 
 2. **Optional gateway URL**: To use a specific gateway, pass it as an argument:
    ```bash
-   ~/.config/airlock-enforcer/bin/airlock-enforcer login https://localhost:7145
+   node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" login https://localhost:7145
    ```
    If omitted, the daemon resolves the gateway automatically: saved config → `AIRLOCK_GATEWAY_URL` → local probe → default prod (`https://gw.airlocks.io`).
 
