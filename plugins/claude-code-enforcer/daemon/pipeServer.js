@@ -257,16 +257,30 @@ function startPipeServer(workspacePath, log, onShutdown) {
 
   const server = net.createServer((socket) => handleConnection(socket, log));
 
-  // Inactivity timeout — safety net for daemon cleanup
-  const inactivityTimer = setInterval(() => {
+  // Periodic health check — inactivity timeout + plugin existence verification
+  const healthCheckTimer = setInterval(() => {
+    // 1. Inactivity timeout — safety net for daemon cleanup
     if (Date.now() - lastActivityAt > INACTIVITY_TIMEOUT_MS) {
-      log("No pipe activity for 5 min — shutting down daemon");
+      log("No activity for 5 min — shutting down daemon");
       if (_shutdownCallback) _shutdownCallback();
       server.close();
       setTimeout(() => process.exit(0), 500);
+      return;
+    }
+    // 2. Plugin existence check — detect uninstall
+    //    If the daemon's own script file no longer exists, the plugin was removed.
+    try {
+      if (!fs.existsSync(__filename)) {
+        log("Plugin directory removed (uninstalled) — shutting down daemon");
+        if (_shutdownCallback) _shutdownCallback();
+        server.close();
+        setTimeout(() => process.exit(0), 500);
+      }
+    } catch {
+      // fs error — don't crash, just skip this check
     }
   }, 60_000);
-  inactivityTimer.unref();
+  healthCheckTimer.unref();
 
   return new Promise((resolve, reject) => {
     if (process.platform !== "win32") {
