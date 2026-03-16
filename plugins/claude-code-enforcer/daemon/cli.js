@@ -391,6 +391,7 @@ async function cmdRun() {
   try {
     const { PresenceClient } = require("./presenceClient.js");
     presenceClient = new PresenceClient("Claude", log);
+    presenceClient.onActivity = () => pipeServer.touchActivity();
     const tokenGetter = async () => auth.ensureFreshToken();
     const workspaceName = path.basename(wsPath);
     await presenceClient.connect(creds.gatewayUrl, tokenGetter, pairing.getEnforcerId(wsPath), workspaceName);

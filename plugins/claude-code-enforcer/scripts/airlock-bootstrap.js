@@ -28,6 +28,7 @@
 const net = require("net");
 const crypto = require("crypto");
 const path = require("path");
+const { spawn } = require("child_process");
 
 // ── Configuration ──────────────────────────────────────────
 let FAIL_MODE = "failClosed"; // Will be set from config or env
@@ -315,6 +316,16 @@ async function main() {
         return;
     }
 
+    // If not paired, Airlock is effectively disabled — allow everything
+    if (config) {
+        const rt = config.getRoutingToken(wsHash);
+        const ek = config.getEncryptionKey(wsHash);
+        if (!rt || !ek) {
+            allow("Not paired — Airlock disabled for this workspace");
+            return;
+        }
+    }
+
     // Auto-approve pattern check (shell commands only, before pipe connection)
     const commandLine = extractCommandLine(payload);
     if (commandLine && config && config.isAutoApproved(wsHash, commandLine)) {
@@ -343,18 +354,29 @@ async function main() {
     } catch (err) {
         const msg = err.message || String(err);
         if (msg === "connection_timeout" || msg.includes("ECONNREFUSED") || msg.includes("ENOENT")) {
-            applyFailMode(`Runtime unavailable (${msg})`);
-            return;
-        }
-        if (msg === "request_timeout") {
+            // Attempt to restart daemon if workspace is configured
+            const restarted = await tryRestartDaemon(workspacePath);
+            if (restarted) {
+                try {
+                    response = await sendToPipe(pipeName, request);
+                } catch {
+                    applyFailMode(`Runtime unavailable after restart attempt`);
+                    return;
+                }
+            } else {
+                applyFailMode(`Runtime unavailable (${msg})`);
+                return;
+            }
+        } else if (msg === "request_timeout") {
             deny(
                 "Approval timed out. No response received within the timeout period.",
                 "Airlock approval timed out. The action was blocked. Do not retry automatically."
             );
             return;
+        } else {
+            applyFailMode(`Pipe error: ${msg}`);
+            return;
         }
-        applyFailMode(`Pipe error: ${msg}`);
-        return;
     }
 
     if (!response || typeof response.permission !== "string") {
@@ -376,6 +398,30 @@ async function main() {
     }
 
     deny(`Unknown permission: ${response.permission}`);
+}
+
+/**
+ * Try to restart the daemon process when the pipe is unavailable.
+ * Returns true if daemon was successfully restarted and pipe is responsive.
+ */
+async function tryRestartDaemon(workspacePath) {
+    try {
+        const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || path.resolve(__dirname, "..");
+        const daemonScript = path.join(pluginRoot, "daemon", "cli.js");
+        log(`Attempting daemon restart: ${daemonScript} run`);
+        const child = spawn(process.execPath, [daemonScript, "run"], {
+            env: { ...process.env, AIRLOCK_WORKSPACE: workspacePath },
+            detached: true,
+            stdio: "ignore",
+        });
+        child.unref();
+        // Wait for daemon to start
+        await new Promise(r => setTimeout(r, 2000));
+        return true;
+    } catch (e) {
+        log(`Daemon restart failed: ${e.message || e}`);
+        return false;
+    }
 }
 
 main().catch((err) => {

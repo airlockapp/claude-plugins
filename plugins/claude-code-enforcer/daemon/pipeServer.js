@@ -292,8 +292,13 @@ function startPipeServer(workspacePath, log, onShutdown) {
   });
 }
 
+function touchActivity() {
+  lastActivityAt = Date.now();
+}
+
 module.exports = {
   startPipeServer,
   getPipeName,
   computeWorkspaceHash: config.computeWorkspaceHash,
+  touchActivity,
 };

@@ -33,6 +33,7 @@ class PresenceClient {
     this._gatewayUrl = null;
     this._deviceId = null;
     this._workspaceName = null;
+    this.onActivity = null; // callback for daemon keep-alive
   }
 
   /**
@@ -143,6 +144,7 @@ class PresenceClient {
   }
 
   _handleMessage(msg) {
+    if (this.onActivity) this.onActivity();
     const type = msg.type || msg.msgType || "";
 
     switch (type) {

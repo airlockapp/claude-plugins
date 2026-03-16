@@ -244,10 +244,19 @@ async function requestApproval(opts, log) {
   const plaintextContent = JSON.stringify({
     actionType,
     commandText,
-    buttonText,
+    description: buttonText,
     workspace: workspaceName,
     repoName: repoName || "",
     source: "claude-code-enforcer",
+    extensions: {
+      "org.harp.requestedActions": {
+        version: 1,
+        actions: [
+          { id: "approve", caption: "Approve", style: "primary", decision: "allow" },
+          { id: "reject", caption: "Reject", style: "danger", decision: "deny" },
+        ],
+      },
+    },
   });
 
   const ciphertext = encryptPayload(plaintextContent, encryptionKey);
