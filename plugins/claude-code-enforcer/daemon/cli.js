@@ -160,7 +160,8 @@ async function cmdPair() {
   } else {
     const daemonScript = path.join(__dirname, "cli.js");
     log("Starting daemon...");
-    const child = spawn(process.execPath, [daemonScript, "run"], {
+    // Pass current PID so daemon can auto-shutdown when this process exits
+    const child = spawn(process.execPath, [daemonScript, "run", "--ppid", String(process.pid)], {
       env: { ...process.env, AIRLOCK_WORKSPACE: wsPath },
       detached: true,
       stdio: "ignore",
@@ -374,6 +375,15 @@ async function cmdRun() {
     process.exit(1);
   }
 
+  // Parse --ppid from command line (parent process to monitor)
+  const ppidIdx = process.argv.indexOf("--ppid");
+  const parentPid = ppidIdx >= 0 && process.argv[ppidIdx + 1]
+    ? parseInt(process.argv[ppidIdx + 1], 10)
+    : null;
+  if (parentPid) {
+    log(`Monitoring parent process: ${parentPid}`);
+  }
+
   // Retrofit legacy pairings (or heal missing files) by ensuring the dotfile/gitignore exists
   ensureAirlockDotfile(wsPath, wsHash);
 
@@ -406,7 +416,7 @@ async function cmdRun() {
   };
 
   log(`Workspace: ${wsPath}`);
-  await pipeServer.startPipeServer(wsPath, log, onShutdown);
+  await pipeServer.startPipeServer(wsPath, log, onShutdown, parentPid);
   log("Daemon running. Leave this process running; Claude Code will connect to the pipe.");
   log("Press Ctrl+C to stop.");
 

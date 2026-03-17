@@ -409,7 +409,9 @@ async function tryRestartDaemon(workspacePath) {
         const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || path.resolve(__dirname, "..");
         const daemonScript = path.join(pluginRoot, "daemon", "cli.js");
         log(`Attempting daemon restart: ${daemonScript} run`);
-        const child = spawn(process.execPath, [daemonScript, "run"], {
+        // Pass grandparent PID so daemon can auto-shutdown when Claude TUI / VS Code exits
+        const ppidArgs = process.ppid ? ["--ppid", String(process.ppid)] : [];
+        const child = spawn(process.execPath, [daemonScript, "run", ...ppidArgs], {
             env: { ...process.env, AIRLOCK_WORKSPACE: workspacePath },
             detached: true,
             stdio: "ignore",

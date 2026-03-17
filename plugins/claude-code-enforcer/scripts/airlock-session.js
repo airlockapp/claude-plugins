@@ -161,7 +161,10 @@ async function handleStart(payload) {
   // Spawn daemon
   const daemonScript = path.join(__dirname, "..", "daemon", "cli.js");
   log(`Starting daemon: ${daemonScript} run (workspace=${cwd})`);
-  const child = spawn(process.execPath, [daemonScript, "run"], {
+  // Pass grandparent PID (Claude TUI / VS Code) so daemon can auto-shutdown when it exits.
+  // We use process.ppid because this session script is short-lived; the real parent is one level up.
+  const ppidArgs = process.ppid ? ["--ppid", String(process.ppid)] : [];
+  const child = spawn(process.execPath, [daemonScript, "run", ...ppidArgs], {
     env: { ...process.env, AIRLOCK_WORKSPACE: cwd },
     detached: true,
     stdio: "ignore",
