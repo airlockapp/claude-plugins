@@ -272,13 +272,14 @@ async function requestApproval(opts, log) {
     createdAt: new Date().toISOString(),
     sender: { enforcerId: enforcerId || "unknown" },
     body: {
-      artifactType: "command-approval",
+      artifactType: "command.review",
       artifactHash,
       ciphertext,
       expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       metadata: {
         repoName: repoName || "",
         workspaceName: workspaceName || "",
+        requestLabel: actionType === "terminal_command" ? "Terminal Command" : "Agent Step",
         routingToken,
       },
     },
