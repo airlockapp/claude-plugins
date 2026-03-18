@@ -248,7 +248,37 @@ async function processRequest(socket, raw, log) {
   });
 }
 
-function startPipeServer(workspacePath, log, onShutdown, parentPid) {
+const { execSync } = require("child_process");
+
+/**
+ * Check if Claude Code is still running by looking for a process named "claude".
+ * More reliable than PID tracking since it doesn't depend on the spawn chain.
+ */
+function isClaudeRunning() {
+  try {
+    if (process.platform === "win32") {
+      const out = execSync('tasklist /FI "IMAGENAME eq claude.exe" /NH', {
+        encoding: "utf8",
+        timeout: 5000,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      return out.toLowerCase().includes("claude.exe");
+    } else {
+      // Unix: pgrep returns 0 if found, 1 if not
+      try {
+        execSync("pgrep -x claude", { timeout: 3000, stdio: "pipe" });
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  } catch {
+    // If the check itself fails, assume Claude is still running (don't kill daemon on transient error)
+    return true;
+  }
+}
+
+function startPipeServer(workspacePath, log, onShutdown) {
   const hash = config.computeWorkspaceHash(workspacePath);
   const pipeName = getPipeName(hash);
   _enforcerId = getEnforcerId(workspacePath);
@@ -257,7 +287,7 @@ function startPipeServer(workspacePath, log, onShutdown, parentPid) {
 
   const server = net.createServer((socket) => handleConnection(socket, log));
 
-  // Periodic health check — inactivity timeout + plugin existence + parent process liveness
+  // Periodic health check — inactivity timeout + plugin existence + Claude Code liveness
   const healthCheckTimer = setInterval(() => {
     // 1. Inactivity timeout — safety net for daemon cleanup
     if (Date.now() - lastActivityAt > INACTIVITY_TIMEOUT_MS) {
@@ -280,17 +310,14 @@ function startPipeServer(workspacePath, log, onShutdown, parentPid) {
     } catch {
       // fs error — don't crash, just skip this check
     }
-    // 3. Parent process liveness — shutdown if parent (Claude TUI / VS Code) exited
-    if (parentPid) {
-      try {
-        process.kill(parentPid, 0); // signal 0 = existence check, no actual signal sent
-      } catch {
-        log(`Parent process ${parentPid} no longer running — shutting down daemon`);
-        if (_shutdownCallback) _shutdownCallback();
-        server.close();
-        setTimeout(() => process.exit(0), 500);
-        return;
-      }
+    // 3. Claude Code liveness — shutdown if Claude Code is no longer running.
+    //    Uses process name detection (not PID) for reliability across spawn chains.
+    if (!isClaudeRunning()) {
+      log("Claude Code process not found — shutting down daemon");
+      if (_shutdownCallback) _shutdownCallback();
+      server.close();
+      setTimeout(() => process.exit(0), 500);
+      return;
     }
   }, 10_000);
   healthCheckTimer.unref();

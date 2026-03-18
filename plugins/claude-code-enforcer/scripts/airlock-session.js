@@ -111,44 +111,6 @@ async function hasCredentialsAndPairing(cwd) {
   }
 }
 
-/**
- * Resolve Claude Code's main process PID (grandparent of this session script).
- * process.ppid = hook runner (intermediate, exits quickly)
- * We need the hook runner's parent = Claude Code main process.
- * Falls back to null if resolution fails — daemon will rely on inactivity timeout.
- */
-async function resolveClaudePid() {
-  const hookRunnerPid = process.ppid;
-  if (!hookRunnerPid) return null;
-
-  try {
-    const { execSync } = require("child_process");
-    if (process.platform === "win32") {
-      // wmic returns ParentProcessId for the hook runner
-      const out = execSync(
-        `wmic process where "ProcessId=${hookRunnerPid}" get ParentProcessId /format:value`,
-        { encoding: "utf8", timeout: 3000 }
-      );
-      const match = out.match(/ParentProcessId=(\d+)/);
-      return match ? parseInt(match[1], 10) : null;
-    } else {
-      // Unix: read /proc/<pid>/stat or use ps
-      try {
-        const stat = require("fs").readFileSync(`/proc/${hookRunnerPid}/stat`, "utf8");
-        const parts = stat.split(" ");
-        return parts[3] ? parseInt(parts[3], 10) : null;
-      } catch {
-        const out = execSync(`ps -o ppid= -p ${hookRunnerPid}`, { encoding: "utf8", timeout: 3000 });
-        const pid = parseInt(out.trim(), 10);
-        return pid > 0 ? pid : null;
-      }
-    }
-  } catch (e) {
-    log(`Could not resolve Claude PID: ${e.message}`);
-    return null;
-  }
-}
-
 async function handleStart(payload) {
   const cwd = payload.cwd || process.env.AIRLOCK_WORKSPACE || process.cwd();
   let wsHash;
@@ -199,13 +161,11 @@ async function handleStart(payload) {
   // Spawn daemon
   const daemonScript = path.join(__dirname, "..", "daemon", "cli.js");
   log(`Starting daemon: ${daemonScript} run (workspace=${cwd})`);
-  // Pass Claude Code's main process PID so daemon can auto-shutdown when it exits.
-  // process.ppid is the hook runner (intermediate process), which exits immediately.
-  // We need the hook runner's parent = Claude Code's main process.
-  const claudePid = await resolveClaudePid();
-  const ppidArgs = claudePid ? ["--ppid", String(claudePid)] : [];
-  if (claudePid) log(`Monitoring Claude Code PID: ${claudePid}`);
-  const child = spawn(process.execPath, [daemonScript, "run", ...ppidArgs], {
+  // Daemon lifecycle is managed by:
+  // 1. SessionEnd hook sends explicit shutdown via pipe
+  // 2. 5-min inactivity timeout (pipeServer health check)
+  // 3. Plugin uninstall detection (__filename existence check)
+  const child = spawn(process.execPath, [daemonScript, "run"], {
     env: { ...process.env, AIRLOCK_WORKSPACE: cwd },
     detached: true,
     stdio: "ignore",
