@@ -260,6 +260,7 @@ function isClaudeRunning() {
       const out = execSync('tasklist /FI "IMAGENAME eq claude.exe" /NH', {
         encoding: "utf8",
         timeout: 5000,
+        windowsHide: true,
         stdio: ["pipe", "pipe", "pipe"],
       });
       return out.toLowerCase().includes("claude.exe");

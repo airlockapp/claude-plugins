@@ -169,6 +169,7 @@ async function handleStart(payload) {
     env: { ...process.env, AIRLOCK_WORKSPACE: cwd },
     detached: true,
     stdio: "ignore",
+    windowsHide: true,
   });
   child.unref();
 
