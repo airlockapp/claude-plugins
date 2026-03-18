@@ -15,7 +15,7 @@ let _wsHash = null;    // Set by startPipeServer from workspace path
 
 const PROTOCOL_VERSION = 1;
 const MAX_PAYLOAD_BYTES = 1024 * 1024;
-const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
 let lastActivityAt = Date.now();
 let currentRequestId = null; // Track in-flight exchange for withdrawal on shutdown
@@ -248,37 +248,6 @@ async function processRequest(socket, raw, log) {
   });
 }
 
-const { execSync } = require("child_process");
-
-/**
- * Check if Claude Code is still running by looking for a process named "claude".
- * More reliable than PID tracking since it doesn't depend on the spawn chain.
- */
-function isClaudeRunning() {
-  try {
-    if (process.platform === "win32") {
-      const out = execSync('tasklist /FI "IMAGENAME eq claude.exe" /NH', {
-        encoding: "utf8",
-        timeout: 5000,
-        windowsHide: true,
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-      return out.toLowerCase().includes("claude.exe");
-    } else {
-      // Unix: pgrep returns 0 if found, 1 if not
-      try {
-        execSync("pgrep -x claude", { timeout: 3000, stdio: "pipe" });
-        return true;
-      } catch {
-        return false;
-      }
-    }
-  } catch {
-    // If the check itself fails, assume Claude is still running (don't kill daemon on transient error)
-    return true;
-  }
-}
-
 function startPipeServer(workspacePath, log, onShutdown) {
   const hash = config.computeWorkspaceHash(workspacePath);
   const pipeName = getPipeName(hash);
@@ -288,11 +257,17 @@ function startPipeServer(workspacePath, log, onShutdown) {
 
   const server = net.createServer((socket) => handleConnection(socket, log));
 
-  // Periodic health check — inactivity timeout + plugin existence + Claude Code liveness
+  // Periodic health check — inactivity timeout + plugin existence
+  // Daemon lifecycle:
+  //   Normal close → SessionEnd hook sends shutdown via pipe (immediate)
+  //   Crash        → no pipe connections → inactivity timeout (15 min)
+  //   Uninstall    → __filename gone → immediate
+  //   Bootstrap    → PreToolUse hook restarts daemon if pipe is gone
   const healthCheckTimer = setInterval(() => {
-    // 1. Inactivity timeout — safety net for daemon cleanup
+    // 1. Inactivity timeout — if no pipe connections for 15 min, daemon shuts down.
+    //    Heartbeat does NOT touch activity — only actual hook interceptions count.
     if (Date.now() - lastActivityAt > INACTIVITY_TIMEOUT_MS) {
-      log("No activity for 5 min — shutting down daemon");
+      log("No activity for 15 min — shutting down daemon");
       if (_shutdownCallback) _shutdownCallback();
       server.close();
       setTimeout(() => process.exit(0), 500);
@@ -310,15 +285,6 @@ function startPipeServer(workspacePath, log, onShutdown) {
       }
     } catch {
       // fs error — don't crash, just skip this check
-    }
-    // 3. Claude Code liveness — shutdown if Claude Code is no longer running.
-    //    Uses process name detection (not PID) for reliability across spawn chains.
-    if (!isClaudeRunning()) {
-      log("Claude Code process not found — shutting down daemon");
-      if (_shutdownCallback) _shutdownCallback();
-      server.close();
-      setTimeout(() => process.exit(0), 500);
-      return;
     }
   }, 10_000);
   healthCheckTimer.unref();

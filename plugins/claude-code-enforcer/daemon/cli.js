@@ -392,7 +392,9 @@ async function cmdRun() {
   try {
     const { PresenceClient } = require("./presenceClient.js");
     presenceClient = new PresenceClient("Claude Code", log);
-    presenceClient.onActivity = () => pipeServer.touchActivity();
+    // Note: heartbeat does NOT touch pipeServer activity — only actual hook
+    // interceptions count for inactivity timeout, so daemon shuts down if
+    // Claude Code is gone even while heartbeats succeed.
     const tokenGetter = async () => auth.ensureFreshToken();
     const workspaceName = path.basename(wsPath);
     await presenceClient.connect(creds.gatewayUrl, tokenGetter, pairing.getEnforcerId(wsPath), workspaceName);
