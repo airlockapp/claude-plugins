@@ -1,20 +1,25 @@
 "use strict";
 
 /**
- * Presence WebSocket client for Claude Code enforcer.
- * Port of cursor's presenceClient.ts — connects to WS /v1/ws for real-time presence.
+ * Presence HTTP heartbeat client for Claude Code enforcer.
+ * Sends periodic HTTP POST to /v1/presence/heartbeat to stay online.
+ *
+ * This replaces the WebSocket-based presence client to avoid
+ * shipping the ws npm dependency with the plugin.
  *
  * Features:
- * - Token auth via query param + header
- * - Capabilities hello on connect
- * - Application-level ping/pong
- * - Handle refresh.request and pairing.revoked messages
- * - Auto-reconnect with exponential backoff (1s → 30s)
+ * - POST /v1/presence/heartbeat every 30 seconds
+ * - Token auth via Bearer header
+ * - Retry with exponential backoff on failure
+ * - No external dependencies (uses Node.js built-in http/https)
  */
 
-const RECONNECT_MIN_MS = 1000;
-const RECONNECT_MAX_MS = 30_000;
-const PING_TIMEOUT_MS = 10_000;
+const http = require("http");
+const https = require("https");
+
+const HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds (gateway offline threshold is 90s)
+const RETRY_MIN_MS = 5_000;
+const RETRY_MAX_MS = 60_000;
 
 class PresenceClient {
   /**
@@ -24,11 +29,9 @@ class PresenceClient {
   constructor(agentName, log) {
     this._agentName = agentName;
     this._log = log || (() => {});
-    this._ws = null;
     this._disposed = false;
-    this._reconnectDelay = RECONNECT_MIN_MS;
-    this._reconnectTimer = null;
-    this._pingTimer = null;
+    this._timer = null;
+    this._retryDelay = RETRY_MIN_MS;
     this._tokenGetter = null;
     this._gatewayUrl = null;
     this._deviceId = null;
@@ -37,176 +40,131 @@ class PresenceClient {
   }
 
   /**
-   * Connect to the presence WebSocket.
+   * Start sending presence heartbeats.
    * @param {string} gatewayUrl Base gateway URL (http/https)
    * @param {() => Promise<string>} tokenGetter Async function returning a fresh auth token
    * @param {string} deviceId Unique device/enforcer identifier
+   * @param {string} [workspaceName] Human-readable workspace name
    */
   async connect(gatewayUrl, tokenGetter, deviceId, workspaceName) {
     this._gatewayUrl = gatewayUrl;
     this._tokenGetter = tokenGetter;
     this._deviceId = deviceId;
     this._workspaceName = workspaceName || "unknown";
-    await this._connect();
+
+    // Send first heartbeat immediately
+    await this._sendHeartbeat();
+
+    // Schedule periodic heartbeats
+    this._scheduleNext(HEARTBEAT_INTERVAL_MS);
   }
 
-  async _connect() {
+  async _sendHeartbeat() {
     if (this._disposed) return;
-
-    let WebSocket;
-    try {
-      WebSocket = require("ws");
-    } catch {
-      this._log("Presence: ws module not available — skipping WebSocket connection");
-      return;
-    }
 
     let token;
     try {
       token = await this._tokenGetter();
     } catch {
       this._log("Presence: failed to get token — will retry");
-      this._scheduleReconnect();
+      this._scheduleNext(this._retryDelay);
+      this._retryDelay = Math.min(this._retryDelay * 2, RETRY_MAX_MS);
       return;
     }
 
     if (!token) {
       this._log("Presence: no token available — will retry");
-      this._scheduleReconnect();
+      this._scheduleNext(this._retryDelay);
+      this._retryDelay = Math.min(this._retryDelay * 2, RETRY_MAX_MS);
       return;
     }
 
-    const base = this._gatewayUrl.replace(/\/$/, "").replace(/^http/, "ws");
-    // Must include role + id query params (gateway requires them)
-    const params = new URLSearchParams({
-      role: "enforcer",
-      id: this._deviceId,
+    const base = this._gatewayUrl.replace(/\/$/, "");
+    const url = `${base}/v1/presence/heartbeat`;
+    const body = JSON.stringify({
+      enforcerId: this._deviceId,
+      workspaceName: this._workspaceName,
+      enforcerLabel: this._agentName,
     });
-    if (token) {
-      params.set("token", token);
-    }
-    const url = `${base}/v1/ws?${params.toString()}`;
-    this._log(`Presence: connecting to ${base}/v1/ws?role=${params.get('role')}&id=${params.get('id')}&token=${token ? token.substring(0, 8) + '...' : 'none'}`);
 
     try {
-      this._ws = new WebSocket(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        rejectUnauthorized: !process.env.NODE_TLS_REJECT_UNAUTHORIZED || process.env.NODE_TLS_REJECT_UNAUTHORIZED !== "0" ? true : false,
-      });
+      const result = await this._httpPost(url, body, token);
+      if (result.status >= 200 && result.status < 300) {
+        this._log(`Presence: heartbeat OK (${result.status})`);
+        this._retryDelay = RETRY_MIN_MS; // reset backoff on success
+        if (this.onActivity) this.onActivity();
+      } else if (result.status === 401) {
+        this._log("Presence: heartbeat 401 — token may be expired, will retry");
+      } else {
+        this._log(`Presence: heartbeat failed (HTTP ${result.status})`);
+      }
     } catch (e) {
-      this._log(`Presence: connection error — ${e.message}`);
-      this._scheduleReconnect();
-      return;
+      this._log(`Presence: heartbeat error — ${e.message || e}`);
     }
+  }
 
-    this._ws.on("open", () => {
-      this._log("Presence: connected");
-      this._reconnectDelay = RECONNECT_MIN_MS;
+  /**
+   * Simple HTTP POST using Node builtins.
+   */
+  _httpPost(url, body, token) {
+    return new Promise((resolve, reject) => {
+      const parsed = new URL(url);
+      const transport = parsed.protocol === "https:" ? https : http;
+      const data = Buffer.from(body, "utf8");
 
-      // Send capabilities hello (match cursor's format exactly)
-      const hello = {
-        msgType: "hello",
-        capabilities: {
-          harpVersion: "1.0",
-          enforcerVersion: "1.0.0",
-          supportsRefresh: "true",
+      const req = transport.request(
+        {
+          hostname: parsed.hostname,
+          port: parsed.port || (parsed.protocol === "https:" ? 443 : 80),
+          path: parsed.pathname + parsed.search,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": data.length,
+            Authorization: `Bearer ${token}`,
+          },
+          timeout: 10_000,
+          rejectUnauthorized:
+            !process.env.NODE_TLS_REJECT_UNAUTHORIZED ||
+            process.env.NODE_TLS_REJECT_UNAUTHORIZED !== "0",
         },
-        workspaceName: this._workspaceName,
-        enforcerLabel: this._agentName,
-      };
-      this._log(`Presence: sending hello: ${JSON.stringify(hello)}`);
-      this._send(hello);
-    });
-
-    this._ws.on("message", (data) => {
-      try {
-        const text = data.toString();
-        this._log(`Presence: received: ${text.substring(0, 200)}`);
-        const msg = JSON.parse(text);
-        this._handleMessage(msg);
-      } catch {
-        this._log(`Presence: invalid message — ${data.toString().substring(0, 100)}`);
-      }
-    });
-
-    this._ws.on("close", (code, reason) => {
-      this._log(`Presence: closed (code=${code}, reason=${reason || "none"})`);
-      this._ws = null;
-      this._clearPingTimer();
-      if (!this._disposed) {
-        this._scheduleReconnect();
-      }
-    });
-
-    this._ws.on("error", (err) => {
-      this._log(`Presence: error — ${err.message || err}`);
-    });
-  }
-
-  _handleMessage(msg) {
-    if (this.onActivity) this.onActivity();
-    const type = msg.type || msg.msgType || "";
-
-    switch (type) {
-      case "ping":
-        this._send({ msgType: "pong" });
-        break;
-
-      case "refresh.request":
-        this._log("Presence: refresh requested — token will refresh on next API call");
-        break;
-
-      case "pairing.revoked":
-        this._log("Presence: pairing revoked — stopping reconnection");
-        this._disposed = true;
-        if (this._ws) {
-          this._ws.close(1000, "pairing revoked");
-          this._ws = null;
+        (res) => {
+          let raw = "";
+          res.on("data", (chunk) => (raw += chunk));
+          res.on("end", () => resolve({ status: res.statusCode, body: raw }));
         }
-        break;
+      );
 
-      default:
-        this._log(`Presence: unknown message type=${type}`);
-    }
+      req.on("timeout", () => {
+        req.destroy();
+        reject(new Error("Heartbeat request timeout"));
+      });
+      req.on("error", reject);
+      req.write(data);
+      req.end();
+    });
   }
 
-  _send(obj) {
-    if (this._ws && this._ws.readyState === 1) {
-      try {
-        this._ws.send(JSON.stringify(obj));
-      } catch {
-        // Ignore send errors
+  _scheduleNext(delayMs) {
+    if (this._disposed) return;
+    if (this._timer) {
+      clearTimeout(this._timer);
+    }
+    this._timer = setTimeout(async () => {
+      this._timer = null;
+      await this._sendHeartbeat();
+      if (!this._disposed) {
+        this._scheduleNext(HEARTBEAT_INTERVAL_MS);
       }
-    }
-  }
-
-  _scheduleReconnect() {
-    if (this._disposed || this._reconnectTimer) return;
-    this._log(`Presence: reconnecting in ${this._reconnectDelay}ms`);
-    this._reconnectTimer = setTimeout(() => {
-      this._reconnectTimer = null;
-      this._connect();
-    }, this._reconnectDelay);
-    this._reconnectDelay = Math.min(this._reconnectDelay * 2, RECONNECT_MAX_MS);
-  }
-
-  _clearPingTimer() {
-    if (this._pingTimer) {
-      clearTimeout(this._pingTimer);
-      this._pingTimer = null;
-    }
+    }, delayMs);
+    this._timer.unref(); // Don't prevent process exit
   }
 
   dispose() {
     this._disposed = true;
-    this._clearPingTimer();
-    if (this._reconnectTimer) {
-      clearTimeout(this._reconnectTimer);
-      this._reconnectTimer = null;
-    }
-    if (this._ws) {
-      try { this._ws.close(1000, "daemon shutting down"); } catch {}
-      this._ws = null;
+    if (this._timer) {
+      clearTimeout(this._timer);
+      this._timer = null;
     }
     this._log("Presence: disposed");
   }

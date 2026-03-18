@@ -396,11 +396,11 @@ async function cmdRun() {
     log(`Refresh timer not started: ${e.message || e}`);
   }
 
-  // Start presence WebSocket
+  // Start presence heartbeat
   let presenceClient = null;
   try {
     const { PresenceClient } = require("./presenceClient.js");
-    presenceClient = new PresenceClient("Claude", log);
+    presenceClient = new PresenceClient("Claude Code", log);
     presenceClient.onActivity = () => pipeServer.touchActivity();
     const tokenGetter = async () => auth.ensureFreshToken();
     const workspaceName = path.basename(wsPath);
